@@ -1,0 +1,98 @@
+// =====================================================================
+// E-Commerce Sales Dashboard | DAX Measures
+// In Power BI: Home > New measure, paste one measure at a time.
+// Tip: create a blank table called "_Measures" to keep them organized.
+// =====================================================================
+
+
+// ---------- DATE TABLE (Modeling > New table) ----------
+// After creating it: Table tools > Mark as date table > choose [Date]
+Date =
+ADDCOLUMNS (
+    CALENDAR ( DATE ( 2024, 1, 1 ), DATE ( 2025, 12, 31 ) ),
+    "Year",       YEAR ( [Date] ),
+    "Quarter",    "Q" & QUARTER ( [Date] ),
+    "Month Num",  MONTH ( [Date] ),
+    "Month",      FORMAT ( [Date], "MMM" ),
+    "Year-Month", FORMAT ( [Date], "YYYY-MM" )
+)
+// Then select the Month column > Column tools > Sort by column > Month Num
+
+
+// ---------- CORE KPIs ----------
+// Net revenue from delivered orders only
+Net Revenue =
+CALCULATE (
+    SUMX ( order_items, order_items[quantity] * order_items[unit_price] * ( 1 - order_items[discount] ) ),
+    orders[status] = "Delivered"
+)
+
+Gross Profit =
+CALCULATE (
+    SUMX (
+        order_items,
+        order_items[quantity]
+            * ( order_items[unit_price] * ( 1 - order_items[discount] ) - RELATED ( products[unit_cost] ) )
+    ),
+    orders[status] = "Delivered"
+)
+
+Profit Margin % = DIVIDE ( [Gross Profit], [Net Revenue] )
+
+Total Orders = CALCULATE ( DISTINCTCOUNT ( orders[order_id] ), orders[status] = "Delivered" )
+
+Active Customers = CALCULATE ( DISTINCTCOUNT ( orders[customer_id] ), orders[status] = "Delivered" )
+
+Avg Order Value = DIVIDE ( [Net Revenue], [Total Orders] )
+
+Units Sold = CALCULATE ( SUM ( order_items[quantity] ), orders[status] = "Delivered" )
+
+
+// ---------- TIME INTELLIGENCE ----------
+Revenue PY = CALCULATE ( [Net Revenue], SAMEPERIODLASTYEAR ( 'Date'[Date] ) )
+
+Revenue YoY % = DIVIDE ( [Net Revenue] - [Revenue PY], [Revenue PY] )
+
+Revenue PM = CALCULATE ( [Net Revenue], DATEADD ( 'Date'[Date], -1, MONTH ) )
+
+Revenue MoM % = DIVIDE ( [Net Revenue] - [Revenue PM], [Revenue PM] )
+
+Revenue YTD = TOTALYTD ( [Net Revenue], 'Date'[Date] )
+
+
+// ---------- CUSTOMERS ----------
+// % of buying customers who placed more than one delivered order
+Repeat Customer % =
+VAR Buyers  = FILTER ( VALUES ( customers[customer_id] ), [Total Orders] >= 1 )
+VAR Repeats = FILTER ( Buyers, [Total Orders] > 1 )
+RETURN DIVIDE ( COUNTROWS ( Repeats ), COUNTROWS ( Buyers ) )
+
+Revenue per Customer = DIVIDE ( [Net Revenue], [Active Customers] )
+
+
+// ---------- RETURNS & LOSSES ----------
+All Orders = DISTINCTCOUNT ( orders[order_id] )
+
+Return Rate % =
+DIVIDE ( CALCULATE ( DISTINCTCOUNT ( orders[order_id] ), orders[status] = "Returned" ), [All Orders] )
+
+Cancel Rate % =
+DIVIDE ( CALCULATE ( DISTINCTCOUNT ( orders[order_id] ), orders[status] = "Cancelled" ), [All Orders] )
+
+Lost Revenue =
+CALCULATE (
+    SUMX ( order_items, order_items[quantity] * order_items[unit_price] * ( 1 - order_items[discount] ) ),
+    orders[status] <> "Delivered"
+)
+
+
+// ---------- OPTIONAL: discount band (Modeling > New column on order_items) ----------
+Discount Band =
+SWITCH (
+    TRUE (),
+    order_items[discount] = 0,     "No discount",
+    order_items[discount] <= 0.05, "5%",
+    order_items[discount] <= 0.10, "10%",
+    order_items[discount] <= 0.15, "15%",
+    "20%"
+)
